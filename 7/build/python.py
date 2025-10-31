@@ -1,7 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-# Открываем файл для чтения ПРИНЯТЫХ данных
 name = "txdata.pcm"
 
 data = []
@@ -21,10 +20,9 @@ with open(name, "rb") as f:
             imag.append(int.from_bytes(byte, byteorder='little', signed=True))
         index += 1
 
-# Построение графиков
 plt.figure(1)
-plt.plot(count, imag, color='red', label='Imag (Q)')
 plt.plot(count, real, color='blue', label='Real (I)')
+plt.plot(count, imag, color='red', label='Imag (Q)')
 plt.xlabel('Samples')
 plt.ylabel('Amplitude')
 plt.legend()
