@@ -1,0 +1,3 @@
+/home/nastya/dev/build/CMakeFiles/main.dir
+/home/nastya/dev/build/CMakeFiles/edit_cache.dir
+/home/nastya/dev/build/CMakeFiles/rebuild_cache.dir
