@@ -1,3 +1,5 @@
+// старая версия наброски бпск
+
 #include <SoapySDR/Device.h>   
 #include <SoapySDR/Formats.h>  
 #include <stdlib.h>            

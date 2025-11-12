@@ -39,6 +39,7 @@ void upsampling(int duration, int count, float I_bpsk[], float Q_bpsk[], float I
     }
 }
 
+//старая версия формирующего фильтра
 void filter(int sample, float I_upsampled[], float Q_upsampled[], float I_filtred[], float Q_filtred[]){
     int length = 10;
 
