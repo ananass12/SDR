@@ -85,6 +85,7 @@ CMakeFiles/main.dir/main.cpp.o: /home/nastya/dev/main.cpp \
   /usr/include/c++/14/ios \
   /usr/include/c++/14/iosfwd \
   /usr/include/c++/14/istream \
+  /usr/include/c++/14/math.h \
   /usr/include/c++/14/new \
   /usr/include/c++/14/ostream \
   /usr/include/c++/14/sstream \
@@ -396,6 +397,8 @@ main: /lib/x86_64-linux-gnu/libc.so.6 \
 
 /usr/include/x86_64-linux-gnu/bits/floatn-common.h:
 
+/usr/include/x86_64-linux-gnu/bits/endianness.h:
+
 /usr/include/c++/14/bits/stringfwd.h:
 
 /usr/include/c++/14/bits/exception_ptr.h:
@@ -431,8 +434,6 @@ CMakeFiles/main.dir/main.cpp.o:
 /usr/include/c++/14/bits/stl_construct.h:
 
 /usr/include/c++/14/bits/memoryfwd.h:
-
-/usr/include/x86_64-linux-gnu/bits/endianness.h:
 
 /usr/lib/x86_64-linux-gnu/libgcc_s.so.1:
 
@@ -509,8 +510,6 @@ CMakeFiles/main.dir/main.cpp.o:
 /usr/include/c++/14/bits/locale_facets.tcc:
 
 /usr/include/stdio.h:
-
-/usr/include/x86_64-linux-gnu/asm/types.h:
 
 /usr/include/pthread.h:
 
@@ -623,6 +622,10 @@ CMakeFiles/main.dir/main.cpp.o:
 /usr/include/c++/14/iosfwd:
 
 /usr/include/math.h:
+
+/usr/include/x86_64-linux-gnu/asm/types.h:
+
+/usr/include/c++/14/math.h:
 
 /usr/include/c++/14/clocale:
 
