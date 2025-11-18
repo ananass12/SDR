@@ -5,6 +5,7 @@
 #include <complex.h>
 #include <stdio.h>
 #include <math.h>
+#include <cstdlib> 
 
 void to_bpsk(int bits[], int count, float I_bpsk[], float Q_bpsk[]){
         for (int i = 0; i < count; i++){
@@ -39,7 +40,6 @@ void upsampling(int duration, int count, float I_bpsk[], float Q_bpsk[], float I
     }
 }
 
-//старая версия формирующего фильтра
 void filter(int sample, float I_upsampled[], float Q_upsampled[], float I_filtred[], float Q_filtred[]){
     int length = 10;
 
@@ -79,14 +79,17 @@ void svertka(int sample, float I_upsampled[], float Q_upsampled[], float I_filtr
             
             I_filtred[start_index + i] = sum_I;
             Q_filtred[start_index + i] = sum_Q;
+
+            //I_filtred[i] = sum_I / 10.0f;  //нормализация
+            //Q_filtred[i] = sum_Q / 10.0f;
         }
     }
 }
 
 void sdvig(int sample, float I_filtred[], float Q_filtred[]){
     for (int i = 0; i < sample; i++){
-        I_filtred[i] = I_filtred[i] * 2047 * 16;  //сдвиг << 4 эквивалентен * 2^4
-        Q_filtred[i] = Q_filtred[i] * 2047 * 16;
+        I_filtred[i] = I_filtred[i] * 0.1 * 2047 * 16;  //сдвиг << 4 эквивалентен * 2^4
+        Q_filtred[i] = Q_filtred[i] * 0.1 * 2047 * 16;
     } 
 }
 
@@ -126,8 +129,8 @@ int main(){
     size_t channels[] = {0};
 
     // Настройки усилителей на RX TX 
-    SoapySDRDevice_setGain(sdr, SOAPY_SDR_RX, 1, 10.0);    //Чувствительность приемника
-    SoapySDRDevice_setGain(sdr, SOAPY_SDR_TX, 1, -90.0);   //Усиление передатчика
+    SoapySDRDevice_setGain(sdr, SOAPY_SDR_RX, 0, 10.0);    //Чувствительность приемника
+    SoapySDRDevice_setGain(sdr, SOAPY_SDR_TX, 0, -90.0);   //Усиление передатчика
 
     size_t channel_count = sizeof(channels) / sizeof(channels[0]);
     
@@ -145,9 +148,13 @@ int main(){
     int16_t tx_buff[2 * tx_mtu] = {0}; 
     int16_t rx_buff[2 * rx_mtu] = {0};
 
+    int bits[100]; 
     //заполняем буффер 
-    int bits[] = {0,1,0,1,1,0,1,1,0,1};
-    int count = 10;      //количество битов
+    for (int i = 0; i<100; i++){
+        bits[i] = rand() % 2;
+    }
+    int count = 100;
+    //int count = sizeof(bits);      //количество битов
     int duration = 10;  //количество семплов на символ
     int sample = count * duration;
     
@@ -189,17 +196,17 @@ int main(){
     long long tx_time = timeNs + (4 * 1000 * 1000); // на 4 [мс] в будущее
 
     // Добавляем время, когда нужно передать блок tx_buff, через tx_time -наносекунд
-    for(size_t i = 0; i < 8; i++)
+    /*for(size_t i = 0; i < 8; i++)
     {
         uint8_t tx_time_byte = (tx_time >> (i * 8)) & 0xff;
         tx_buff[2 + i] = tx_time_byte << 4;
-    }
-    
+    }*/
+
     const long  timeoutUs = 400000;
     long long last_time = 0;
 
     // Количество итерация чтения из буфера
-    size_t iteration_count = 10;
+    size_t iteration_count = sample;
 
     FILE *file = fopen("rxdata.pcm", "wb");
     //получение и отправка сэмплов
