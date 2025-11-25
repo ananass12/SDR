@@ -1,0 +1,7 @@
+build/
+*.dat
+*.bin
+__pycache__/
+*.pyc
+*.pyo
+.vscode/
