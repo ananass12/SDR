@@ -1,3 +1,4 @@
+
 #include <SoapySDR/Device.h>   
 #include <SoapySDR/Formats.h>  
 #include <stdlib.h>            
@@ -7,6 +8,8 @@
 #include <math.h>
 #include <cstdlib> 
 #include <string.h>
+
+using namespace std;
 
 void to_bpsk(int bits[], int count, float I_bpsk[], float Q_bpsk[]){
         for (int i = 0; i < count; i++){
@@ -35,22 +38,6 @@ void upsampling(int duration, int count, float I_bpsk[], float Q_bpsk[], float I
         index += duration;
     }
 }
-
-/*void filter(int sample, float I_upsampled[], float Q_upsampled[], float I_filtred[], float Q_filtred[]){
-    int length = 10;
-
-    for (int i = 0; i < sample; i++){
-        if (i % length == length - 1){
-            float current_I = I_upsampled[i];
-            float current_Q = Q_upsampled[i];
-
-            for (int j = 0; j < length; j++){
-                I_filtred[i - j] = current_I;
-                Q_filtred[i - j] = current_Q;
-            }
-        }
-    }
-}*/
 
 void svertka(int sample, float I_upsampled[], float Q_upsampled[], float I_filtred[], float Q_filtred[]){
     const int length = 10;
@@ -87,8 +74,8 @@ void sdvig(int sample, float I_input[], float Q_input[], float I_output[], float
 
 void to_buff(float I_filtred[], float Q_filtred[], int16_t tx_buff[], int sample){
     for (int i = 0; i < sample; i++){
-        tx_buff[2*i] = (int16_t)(I_filtred[i] * 32767.0f);
-        tx_buff[2*i + 1] = (int16_t)(Q_filtred[i] * 32767.0f);
+        tx_buff[2*i] = (int16_t)(I_filtred[i] * 10000.0f);
+        tx_buff[2*i + 1] = (int16_t)(Q_filtred[i] * 10000.0f);
     }
 }
 
@@ -99,37 +86,85 @@ void from_buff(int16_t rx_buff[], float I_received[], float Q_received[], int sa
     }
 }
 
-/*вычисляем ошибку положения символа
-    используем набор отчетов и вычисляем ошибку e(n), величина которой зависит от смещения максимума выхода СФ
 
-    формула Гарднера
-    e = (I(n+Nsp+Ns) - I(n+Ns)) * I(n+Nsp/2+Ns) + (Q(n+Nsp+Ns) - Q(n+Ns)) * Q(n+Nsp/2+Ns).
+void SymbolTimingRecovery(const float I_in[], const float Q_in[], int signal_length, int Nsp, int start_offset, float sym_I[], float sym_Q[], int *symbol_count, int *final_offset) { 
     
-    samples_per_symbol = duration
-    signal_length — num_samples
-    I, Q — входные сигналы 
-    e — выходной массив ошибок
-    Ns — начальный сдвиг (часто 0, если синхронизация по символам ещё не установлена)
-*/
+    float K1 = 0.05f;
+    float K2 = 0.005f;
+    float p2 = 0.0f;
+    int offset = 0;
+    *symbol_count = 0;
+    
+    int max_symbols = (signal_length - start_offset - 2 * Nsp) / Nsp;
+    
+    int error_zero_count = 0;
+    int error_large_count = 0;
+    float min_error = 999.0f;
+    float max_error = -999.0f;
+    
+    for (int sym = 0; sym < max_symbols; sym++) {
+        int n = start_offset + sym * Nsp;
+        int i_prev = n + offset;
+        int i_mid  = n + offset + Nsp / 2;
+        int i_next = n + offset + Nsp;
+        
+        if (i_next >= signal_length) {
+            printf("WARNING: i_next (%d) >= signal_length (%d) at sym=%d\n", 
+                   i_next, signal_length, sym);
+            break;
+        }
+        
+        // Gardner TED
+        float e = (I_in[i_next] - I_in[i_prev]) * I_in[i_mid] + 
+                  (Q_in[i_next] - Q_in[i_prev]) * Q_in[i_mid];
+        
+        // Статистика ошибки
+        if (e < min_error) min_error = e;
+        if (e > max_error) max_error = e;
+        if (e > -0.01f && e < 0.01f) error_zero_count++;
+        if (e > 1.0f || e < -1.0f) error_large_count++;
+        
+        // Ограничение ошибки
+        if (e > 1.0f) e = 1.0f;
+        if (e < -1.0f) e = -1.0f;
+        
+        // Loop filter
+        float p1 = e * K1;
+        p2 = p2 + p1 + e * K2;
+        
+        // Offset
+        int prev_offset = offset;
+        offset = (int)(roundf(p2 * Nsp)) % Nsp;
+        if (offset < 0) offset += Nsp;
+        
+        // Сохраняем символ
+        sym_I[*symbol_count] = I_in[i_mid];
+        sym_Q[*symbol_count] = Q_in[i_mid];
+        (*symbol_count)++;
+        
+        // Вывод первых 10 символов и каждого 100-го
+        if (sym < 10 || sym % 100 == 0) {
+            printf("SYM %3d: n=%5d idx=[%5d,%5d,%5d] I_mid=%.3f Q_mid=%.3f e=%.4f p2=%.4f offset=%d\n",
+                   sym, n, i_prev, i_mid, i_next, I_in[i_mid], Q_in[i_mid], e, p2, offset);
+        }
+        
+        // Если offset изменился - выводим
+        if (offset != prev_offset && sym >= 10) {
+            printf("  >>> OFFSET CHANGED: %d -> %d (p2=%.4f)\n", prev_offset, offset, p2);
+        }
+    }
 
-void TED(const float I_[], const float Q[], float *e, int signal_length, int samples_per_symbol, int Ns) {
-    int Nsp = samples_per_symbol;
-    int half_Nsp = Nsp / 2;
-
-    for (int n = Ns; n <= signal_length - Nsp - 1; n += Nsp) {
-
-        int idx_prev = n;                     // n
-        int idx_mid  = n + half_Nsp;          // n + Nsp/2
-        int idx_next = n + Nsp;               // n + Nsp
-
-        if (idx_next >= signal_length || idx_mid >= signal_length) break;
-
-        float diff_I = I_[idx_next] - I_[idx_prev];
-        float diff_Q = Q[idx_next] - Q[idx_prev];
-        float mid_I  = I_[idx_mid];
-        float mid_Q  = Q[idx_mid];
-
-        e[n / Nsp] = diff_I * mid_I + diff_Q * mid_Q;
+    printf("Total symbols captured: %d\n", *symbol_count);
+    printf("Final offset: %d (expected 0-%d)\n", offset, Nsp - 1);
+    printf("Error range: [%.4f, %.4f]\n", min_error, max_error);
+    printf("Near-zero errors (|e|<0.01): %d (%.1f%%)\n", 
+           error_zero_count, 100.0f * error_zero_count / (*symbol_count));
+    printf("Large errors (|e|>1.0): %d (%.1f%%)\n", 
+           error_large_count, 100.0f * error_large_count / (*symbol_count));
+    printf("Final p2 (phase): %.4f\n", p2);
+    
+    if (final_offset != NULL) {
+        *final_offset = offset;
     }
 }
 
@@ -145,7 +180,7 @@ int main(){
 
     SoapySDRKwargs_set(&args, "direct", "1");
     SoapySDRKwargs_set(&args, "timestamp_every", "1920");   //Размер буфера + временные метки
-    SoapySDRKwargs_set(&args, "loopback", "1");
+    SoapySDRKwargs_set(&args, "loopback", "0");
     SoapySDRDevice *sdr = SoapySDRDevice_make(&args);
     SoapySDRKwargs_clear(&args);
 
@@ -163,8 +198,8 @@ int main(){
     size_t channels[] = {0};
 
     // Настройки усилителей на RX TX 
-    SoapySDRDevice_setGain(sdr, SOAPY_SDR_RX, 0, 10.0);    //Чувствительнмне нужно из полученного файла rx_data достать данные, еще раз применить свертку, сохранить в другой файл (мне нужно получить пилообразную форму)ость приемника
-    SoapySDRDevice_setGain(sdr, SOAPY_SDR_TX, 0, -90.0);   //Усиление передатчика
+    SoapySDRDevice_setGain(sdr, SOAPY_SDR_RX, 0, 50.0);    
+    SoapySDRDevice_setGain(sdr, SOAPY_SDR_TX, 0, -10.0);  
 
     size_t channel_count = sizeof(channels) / sizeof(channels[0]);
     
@@ -263,7 +298,7 @@ int main(){
         int sr = SoapySDRDevice_readStream(sdr, rxStream, rx_buffs, rx_mtu, &flags, &timeNs, timeoutUs);
         
         if (sr > 0) {
-            fwrite(rx_buff, sizeof(int16_t), 2 * sr, rx_file);
+            fwrite(rx_buffs[0], sizeof(int16_t), 2 * sr, rx_file);
             //printf("Buffer: %lu - RX: %i samples\n", buffers_read, sr);
             // Смотрим на количество считаных сэмплов, времени прихода и разницы во времени с чтением прошлого буфера
             printf("Buffer: %lu - Samples: %i, Flags: %i, Time: %lli, TimeDiff: %lli\n", buffers_read, sr, flags, timeNs, timeNs - last_time);
@@ -321,33 +356,31 @@ int main(){
     float *filtered_Q = (float*)malloc(num_rx_samples * sizeof(float));
     svertka(num_rx_samples, rx_I, rx_Q, filtered_I, filtered_Q);
 
-
     const int samples_per_symbol = duration; // = 10
-    // Максимальное количество ошибок: по одной на символ
-    int max_ted_errors = (num_rx_samples / samples_per_symbol) + 1;
-    float *ted_error = (float*)malloc(max_ted_errors * sizeof(float));
 
-    // Инициализируем нулями (на случай, если TED не заполнит все)
-    for (int i = 0; i < max_ted_errors; i++) {
-        ted_error[i] = 0.0f;
+    ////////////////////////////////////////////////////////////////////
+    float *sym_I = (float*)malloc((num_rx_samples / duration) * sizeof(float));
+    float *sym_Q = (float*)malloc((num_rx_samples / duration) * sizeof(float));
+
+    int final_offset = 0;
+    int symbol_count = 0;
+
+    // символьная синхронизация
+    SymbolTimingRecovery(filtered_I, filtered_Q, num_rx_samples, duration, start_offset, sym_I, sym_Q, &symbol_count, &final_offset);
+
+    printf("Восстановлено %d символов\n", symbol_count);
+    printf("Подобранный сдвиг =  %d \n", final_offset);
+
+    // сдвиг начала на найденный offset
+    float *I_shifted = (float*)malloc((num_rx_samples - final_offset) * sizeof(float));
+    float *Q_shifted = (float*)malloc((num_rx_samples - final_offset) * sizeof(float));
+
+    for (int i = 0; i < num_rx_samples - final_offset; i++) {
+        I_shifted[i] = filtered_I[i + final_offset];
+        Q_shifted[i] = filtered_Q[i + final_offset];
     }
 
-    // Запуск TED на отфильтрованном сигнале
-    TED(filtered_I, filtered_Q, ted_error, num_rx_samples, samples_per_symbol, 0);
-
-    // Сохраняем ошибки в файл для анализа в Python 
-    FILE *ted_file = fopen("ted_error.txt", "w");
-    if (ted_file) {
-        for (int i = 0; i < max_ted_errors; i++) {
-            fprintf(ted_file, "%f\n", ted_error[i]);
-        }
-        fclose(ted_file);
-    }
-    free(ted_error);
-
-
-
-
+    ////////////////////////////////////////////////////////////////////
 
     //Конвертация float в int16
     int16_t *filtered_sdr = (int16_t*)malloc(2 * num_rx_samples * sizeof(int16_t));
@@ -362,6 +395,8 @@ int main(){
     free(rx_Q);
     free(filtered_I);
     free(filtered_Q);
+    free(I_shifted);
+    free(Q_shifted);
     free(filtered_sdr);
 
     SoapySDRDevice_deactivateStream(sdr, rxStream, 0, 0);
