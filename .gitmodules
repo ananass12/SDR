@@ -1,0 +1,7 @@
+[submodule "10-11/etc/implot"]
+	path = 10-11/etc/implot
+	url = https://github.com/epezent/implot.git
+[submodule "10-11/etc/imgui"]
+	path = 10-11/etc/imgui
+	url = https://github.com/ocornut/imgui.git
+	branch = docking
