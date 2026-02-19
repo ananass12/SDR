@@ -62,9 +62,9 @@ vector<complex<float>> convolve(vector<complex<float>>IQ_upsampled, int sample_p
 
 vector<float> symbol_sync(vector<complex<float>> IQ_convolved2, int samples_per_symbol){
     int K1, K2, p1, p2 = 0;
-    int BnTs = 0.01;
+    float BnTs = 0.001;
     int Nsps = samples_per_symbol;
-    int Kp = 0.002;
+    float Kp = 0.0002;
     float zeta = sqrt(2) / 2;
     float theta = (BnTs / Nsps) / (zeta + (0.25 / zeta));
     K1 = -4 * zeta * theta / ((1 + 2 * zeta * theta + pow(theta,2)) * Kp);
