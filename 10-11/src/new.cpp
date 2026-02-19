@@ -7,6 +7,8 @@
 #include <stdio.h>
 #include <cmath>
 #include <string.h>
+#include "imgui.h"
+#include "implot.h"
 
 using namespace std;
 
