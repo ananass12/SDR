@@ -363,6 +363,7 @@ int main(){
     float *sym_Q = (float*)malloc((num_rx_samples / duration) * sizeof(float));
 
     int final_offset = 0;
+    int start_offset = 0;
     int symbol_count = 0;
 
     // символьная синхронизация

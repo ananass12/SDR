@@ -7,8 +7,8 @@
 #include <stdio.h>
 #include <cmath>
 #include <string.h>
-#include "imgui.h"
-#include "implot.h"
+//#include "imgui.h"
+//#include "implot.h"
 
 using namespace std;
 
@@ -64,9 +64,9 @@ vector<complex<float>> convolve(vector<complex<float>>IQ_upsampled, int sample_p
 
 vector<float> symbol_sync(vector<complex<float>> IQ_convolved2, int samples_per_symbol){
     int K1, K2, p1, p2 = 0;
-    int BnTs = 0.01;
+    float BnTs = 0.0001;
     int Nsps = samples_per_symbol;
-    int Kp = 0.002;
+    float Kp = 0.0002;
     float zeta = sqrt(2) / 2;
     float theta = (BnTs / Nsps) / (zeta + (0.25 / zeta));
     K1 = -4 * zeta * theta / ((1 + 2 * zeta * theta + pow(theta,2)) * Kp);
@@ -78,6 +78,7 @@ vector<float> symbol_sync(vector<complex<float>> IQ_convolved2, int samples_per_
     // Основной цикл
     for (int i = 0; i < (int)IQ_convolved2.size(); i += Nsps){
         err = (IQ_convolved2[i + Nsps + tau].real() - IQ_convolved2[i + tau].real()) * IQ_convolved2[i + (Nsps / 2) + tau].real() + (IQ_convolved2[i + Nsps + tau].imag() - IQ_convolved2[i + tau].imag()) * IQ_convolved2[i + (Nsps / 2) + tau].imag();
+        
         // Вычисление пропорциональной и интегральной составляющих
         p1 = err * K1;
         p2 = p2 + p1 + err * K2;
