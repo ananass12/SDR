@@ -35,18 +35,18 @@ vector<complex<float>> upsampling(vector<complex<float>>IQ_bpsk, int num_bits, i
 vector<complex<float>> convolve(vector<complex<float>>IQ_upsampled, int sample_per_symbol){
     vector<complex<float>> IQ_convolved;
     vector <float> mask(sample_per_symbol, 1.0f);
-        
-    for (int i = 0; i < (int)IQ_upsampled.size(); i+= (int)mask.size()) {
-        for (int j = 0; j < (int)mask.size(); j++) {
+
+    for (int i = 0; i < (int)IQ_upsampled.size(); i++) {
             float sum_I = 0.0;
             float sum_Q = 0.0;
-
             for (int m = 0; m < (int)mask.size(); m++) {
-                sum_I += IQ_upsampled[i + m].real() * mask[j - m];
-                sum_Q += IQ_upsampled[i + m].imag() * mask[j - m];
+                int idx =  i - m;
+                if (idx >= 0 && idx < (int)IQ_upsampled.size()){
+                    sum_I += IQ_upsampled[idx].real() * mask[m];
+                    sum_Q += IQ_upsampled[idx].imag() * mask[m];
+                }
             }
             IQ_convolved.push_back(complex<float>(sum_I, sum_Q));
-        } 
     }
     return IQ_convolved;
 }
@@ -85,6 +85,39 @@ vector<float> symbol_sync(vector<complex<float>> IQ_convolved2, int samples_per_
         // Сохранение результатов текущей итерации
         erof.push_back(i + Nsps + tau);
     }
-
+ 
     return erof;
+}
+
+vector<complex<float>> downsampling(vector <float> erof, vector<complex<float>> IQ_convolved2){
+    vector <complex<float>> IQ_true;
+
+    for (int i = 0; i < (int)erof.size(); i++){
+        int index = erof[i];
+        if (index >= 0 && index < (int)IQ_convolved2.size()) {
+            IQ_true.push_back(IQ_convolved2[index]);
+        }
+    }
+
+    return IQ_true;
+}
+
+vector<int> from_bpsk(const vector<complex<float>>& IQ_true) {
+    vector<int> bits;
+    
+    if (IQ_true.empty()) {
+        return bits;
+    }
+    
+    bits.resize(IQ_true.size());
+    
+    for (size_t i = 0; i < IQ_true.size(); i++) {
+        if (IQ_true[i].real() > 0.0f) {
+            bits[i] = 1;
+        } else {
+            bits[i] = 0;
+        }
+    }
+    
+    return bits;
 }
