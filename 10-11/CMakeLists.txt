@@ -62,6 +62,8 @@ target_compile_options(implot PRIVATE -fPIC)
 
 add_executable(new 
     ${SRC_DIR}/new.cpp 
+    ${SRC_DIR}/sdr.cpp 
+    ${SRC_DIR}/imgui.cpp 
     ${SRC_DIR}/signal_processing.cpp
 )
 

@@ -13,5 +13,7 @@ vector<complex<float>> convolve(vector<complex<float>> IQ_upsampled, int sample_
 vector<float> symbol_sync(vector<complex<float>> IQ_convolved2, int samples_per_symbol);
 vector<complex<float>> downsampling(vector <float> erof, vector<complex<float>> IQ_convolved2);
 vector<int> from_bpsk(const vector<complex<float>>& IQ_true);
+void to_buff(vector<complex<float>>& IQ_data, int16_t* tx_buff, size_t sample_per_symbol);
+void from_buff(vector<complex<float>>& IQ_rx, const int16_t* sdr_buff, size_t sample_per_symbol);
 
 #endif 

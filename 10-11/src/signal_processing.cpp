@@ -90,16 +90,16 @@ vector<float> symbol_sync(vector<complex<float>> IQ_convolved2, int samples_per_
 }
 
 vector<complex<float>> downsampling(vector <float> erof, vector<complex<float>> IQ_convolved2){
-    vector <complex<float>> IQ_true;
+    vector <complex<float>> IQ_downsampling;
 
     for (int i = 0; i < (int)erof.size(); i++){
         int index = erof[i];
         if (index >= 0 && index < (int)IQ_convolved2.size()) {
-            IQ_true.push_back(IQ_convolved2[index]);
+            IQ_downsampling.push_back(IQ_convolved2[index]);
         }
     }
 
-    return IQ_true;
+    return IQ_downsampling;
 }
 
 vector<int> from_bpsk(const vector<complex<float>>& IQ_true) {
@@ -120,4 +120,21 @@ vector<int> from_bpsk(const vector<complex<float>>& IQ_true) {
     }
     
     return bits;
+}
+
+void to_buff(vector<complex<float>>& IQ_tx, int16_t* sdr_buff, size_t sample_per_symbol){
+    for (size_t i = 0; i<sample_per_symbol; i++){
+        sdr_buff[2*i] = (int16_t)(IQ_tx[i].real() * 32767.0f);
+        sdr_buff[2*i + 1] = (int16_t)(IQ_tx[i].imag() * 32767.0f);
+    }
+}
+
+void from_buff(vector<complex<float>>& IQ_rx, const int16_t* sdr_buff, size_t sample_per_symbol){
+    IQ_rx.resize(sample_per_symbol);
+    for (size_t i = 0; i<sample_per_symbol; i++){
+        IQ_rx[i] = {
+            (float)sdr_buff[2*i] / 32768.0f,
+            (float)sdr_buff[2*i + 1] / 32768.0f
+        };
+    }
 }
