@@ -21,10 +21,13 @@ void run_gui(
     const vector<complex<float>>& IQ_bpsk,
     const vector<complex<float>>& IQ_upsampled, 
     const vector<complex<float>>& IQ_convolved, 
+    const vector<complex<float>>& rx_subset,
     const vector<complex<float>>& IQ_convolved2,
     const vector<complex<float>>& IQ_true,
+    const vector<complex<float>>& IQ_corr,
+    const vector<complex<float>>& znach_corr,
+    const vector<complex<float>>& data_only,
     const vector<int> bits2,
-    const vector<float>& erof,
     int samples_per_symbol
 );
 

@@ -32,10 +32,14 @@ find_package(SDL2 REQUIRED)
 find_package(OpenGL REQUIRED)
 find_package(GLEW REQUIRED)
 
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(FFTW REQUIRED fftw3)
+
 # Добавляем пути поиска заголовков
 include_directories(${INCLUDE_DIR})
 include_directories(${SOAPYSDR_INCLUDE_DIR})
 include_directories(${SDL2_INCLUDE_DIRS})
+include_directories(${FFTW_INCLUDE_DIRS})
 
 # Сборка ImGui
 add_library(imgui STATIC
@@ -75,6 +79,8 @@ target_link_libraries(new PRIVATE
     ${SDL2_LIBRARIES} 
     ${OPENGL_LIBRARIES} 
     ${GLEW_LIBRARIES}
+    ${FFTW_LIBRARIES}
+    fftw3f
 )
 
 target_compile_options(new PRIVATE -g -Wall)

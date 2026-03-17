@@ -1,6 +1,9 @@
 #include "signal_processing.h" 
 #include "imgui_implot.h"
 #include "sdr.h"
+#include "test_rx_samples_bpsk_barker13.h"
+#include <cmath>
+#include <complex>
 
 using namespace std;
 
@@ -18,8 +21,8 @@ int main(){
     printf(" УСТРОЙСТВО ИНИЦИАЛИЗИРОВАНО \n");
     printf("TX MTU - %zu сэмплов\n", sdr->tx_mtu);
 
-    const int samples_per_symbol = 10;
-    const int num_bits = sdr->tx_mtu / samples_per_symbol;  
+    int samples_per_symbol = 10;
+    const int num_bits = sdr->tx_mtu / samples_per_symbol - 7;  
 
     vector<int> bits;
     bits.resize(num_bits);
@@ -33,8 +36,14 @@ int main(){
     vector<complex<float>> IQ_bpsk = to_bpsk(bits);
     printf("Получено %zu символов\n", IQ_bpsk.size());
 
+    printf(" Добавление кода Баркера\n");
+    vector<complex<float>> IQ_barker = barker_code(IQ_bpsk);
+  //  vector<complex<float>> barker = {(1.0f, 0.0f),(1.0f, 0.0f),(1.0f, 0.0f),(-1.0f, 0.0f),(-1.0f, 0.0f),(1.0f, 0.0f),(-1.0f, 0.0f)};
+    printf("Получено %zu символов\n", IQ_barker.size());
+
     printf(" Upsampling\n");
-    vector<complex<float>> IQ_upsampled = upsampling(IQ_bpsk, num_bits, samples_per_symbol);
+    vector<complex<float>> IQ_upsampled = upsampling(IQ_bpsk, samples_per_symbol);
+   // vector<complex<float>> barker_upsampled = upsampling(barker, samples_per_symbol);
     printf("Получено %zu сэмплов\n", IQ_upsampled.size());
 
     printf(" Свертка\n");
@@ -44,14 +53,25 @@ int main(){
     printf(" ОБРАБОТКА ЗАКОНЧЕНА \n");
 
     // конвертация в буфер
-    int16_t *tx_buff = (int16_t*)malloc(2*sdr->tx_mtu*sizeof(int16_t));
+    printf(" Конвертация в буфер\n");
+
+    int16_t *tx_buff = (int16_t*)malloc(2 * sdr->tx_mtu * sizeof(int16_t)); 
+    
     to_buff(IQ_convolved, tx_buff, IQ_convolved.size());
 
-    // заполняем конец нулями
-    for (size_t i = IQ_convolved.size(); i < sdr->tx_mtu; i++) {
-        tx_buff[2*i] = 0;
-        tx_buff[2*i + 1] = 0;
+    //первые 8 ячеек для timestamp
+    for(size_t i = 0; i < 2; i++){
+        tx_buff[0 + i] = 0xffff;
+        tx_buff[10 + i] = 0xffff;
     }
+
+    printf("\nБуфер передачи готов: %zu сэмплов\n", IQ_convolved.size());
+
+    // заполняем конец нулями
+    // for (size_t i = IQ_convolved.size(); i < sdr->tx_mtu; i++) {
+    //     tx_buff[2*i] = 0;
+    //     tx_buff[2*i + 1] = 0;
+    // }
     
     int16_t *rx_buff = (int16_t*)malloc(2 * sdr->rx_mtu * sizeof(int16_t));
     long long timeNs = 0; 
@@ -61,7 +81,8 @@ int main(){
     if (!rx_file) {
         perror("Не удалось открыть rx_samples.pcm");
     }
-
+    vector<complex<float>> rx_complex(1920);
+    
     FILE *tx_file = fopen("tx_samples.pcm", "wb");
     if (!tx_file) {
         perror("Не удалось открыть tx_samples.pcm");
@@ -69,10 +90,10 @@ int main(){
     
     vector<complex<float>> rx_signal;
 
-    size_t iteration_count = 20;
+    size_t iteration_count = 100;
     printf("НАЧАЛО ПРИЕМА/ПЕРЕДАЧИ\n");
 
-    for (size_t i = 0; i < iteration_count; i++)  {
+    for (size_t i = 0; i < iteration_count; i+=2)  {
         
         // ПРИЁМ
         void *rx_buffs[] = {rx_buff};
@@ -83,26 +104,25 @@ int main(){
         if (sr > 0) {
             printf("Приём %zu: %d сэмплов\n", i, sr);
             
-            if (rx_file != NULL) {
+            if (rx_file != NULL && sr > 0) {
+
                 fwrite(rx_buff, sizeof(int16_t), 2 * sr, rx_file);
             }
-            
-            vector<complex<float>> rx_complex;
-            from_buff(rx_complex, rx_buff, sr);
-            rx_signal.insert(rx_signal.end(), rx_complex.begin(), rx_complex.end());
-        } else {
-            printf("Приём %zu: ОШИБКА (%d)\n", i, sr);
-        }
-
+            rx_complex.insert(rx_complex.end(),rx_buff, rx_buff + 2*sr);
+        } 
+    
         // передача на 3 итерации
-        if (i == 2) {
-            printf("\n  ОТПРАВКА СИГНАЛА (%zu сэмплов) <<<\n", IQ_convolved.size());
+        if (sr > 0) {
+            printf("\n  ОТПРАВКА СИГНАЛА (%zu сэмплов)\n", IQ_convolved.size());
             
             if (tx_file != NULL) {
-                fwrite(tx_buff, sizeof(int16_t), 2 * sdr->tx_mtu, tx_file);
+                size_t written = fwrite(tx_buff, sizeof(int16_t), 2 * IQ_convolved.size(), tx_file);
+                if (written != 2 * IQ_convolved.size()) {
+                    perror("Ошибка записи tx_samples.pcm");
+                }
             }
-            
-            long long tx_time = timeNs + (4 * 1000 * 1000);
+            long long tx_time = timeNs + (10 * 1000 * 1000);  //10 мс
+
             for(size_t j = 0; j < 8; j++) {
                 uint8_t tx_time_byte = (tx_time >> (j * 8)) & 0xff;
                 tx_buff[2 + j] = tx_time_byte << 4;
@@ -118,8 +138,7 @@ int main(){
                 printf(" Успешно отправлено\n");
             }
         }
-        
-        this_thread::sleep_for(chrono::milliseconds(50));
+    
     }
 
     if (rx_file != NULL) fclose(rx_file);
@@ -128,19 +147,67 @@ int main(){
 
     printf("\n  ОБРАБОТКА ПРИНЯТЫХ ДАННЫХ \n");
 
-    if (rx_signal.size() > 0) {
-        printf("Всего получено сэмплов: %zu\n", rx_signal.size());
+    if (test_rx_samples_bpsk_barker13.size() > 0) {
+        printf("Всего получено сэмплов: %zu\n", test_rx_samples_bpsk_barker13.size());
+        samples_per_symbol = 16;
+
+        const size_t start_idx = 650;
+        const size_t end_idx = start_idx + 1920;
         
-        vector<complex<float>> IQ_convolved2 = convolve(IQ_convolved, samples_per_symbol);
-        vector<float> erof = symbol_sync(IQ_convolved2, samples_per_symbol);
-        vector<complex<float>> IQ_downsampled = downsampling(erof, IQ_convolved2);
-        vector<int> bits2 = from_bpsk(IQ_downsampled);
+        if (end_idx > test_rx_samples_bpsk_barker13.size()) {
+            printf(" ПРЕДУПРЕЖДЕНИЕ: end_idx=%zu превышает размер данных (%zu)\n", 
+                end_idx, test_rx_samples_bpsk_barker13.size());
+        }
+
+        // ОБРЕЗАЕМ ДО 1 БУФФЕРА
+        vector<complex<float>> rx_subset;
+
+        for (int i = start_idx; i < (int)end_idx; i++){
+            rx_subset.push_back(test_rx_samples_bpsk_barker13[i] / (float)pow(2,11));
+        }
+       
+        int syms = 5;
+        float beta = 0.75;
+        vector<float> filter = srrc(syms, beta, samples_per_symbol, 0.0f);
+        vector<complex<float>> IQ_matched = convolve2(rx_subset, filter);
+        //vector<complex<float>> IQ_matched = matched_filter(rx_subset, samples_per_symbol);
+
+        //vector<float> erof = symbol_sync(IQ_matched, samples_per_symbol);
+        vector<complex<float>> IQ_symbol_sync = clock_recovery_mueller_muller(IQ_matched, samples_per_symbol);
+        //vector<complex<float>> IQ_downsampled = downsampling(erof, IQ_matched);
+
+        vector<complex<float>> IQ_freq = freq_sync_bpsk(IQ_symbol_sync);
+
+        cout << "Формируем код Баркера (13 бит)" << endl;
+
+        vector<complex<float>> barker_complex = {{1.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 0.0f},
+        {-1.0f, 0.0f}, {-1.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 0.0f}, {-1.0f, 0.0f},
+        {1.0f, 0.0f}, {-1.0f, 0.0f}, {1.0f, 0.0f}};
         
-        printf("Точек синхронизации: %zu\n", erof.size());
-        printf("Восстановлено символов: %zu\n", IQ_downsampled.size());
+        float threshold_ratio = 5.5f;
+
+        vector<complex<float>> znach_corr = cross_correlation(IQ_freq, barker_complex);
+
+        // for (int i = 0; i < (int)znach_corr.size(); i++){
+        //     cout << znach_corr[i];
+        // }
+
+        // ПОИСК НАЧАЛА КОДА БАРКЕРА
+        int barker_index = find_barker(IQ_freq, barker_complex, threshold_ratio);
+        printf("Начало кода баркера: %d\n", barker_index);
+        
+        // УБИРАЕМ БАРКЕРА
+        vector<complex<float>> data_only(IQ_freq.begin() + barker_index + 13, IQ_freq.end());
+
+        vector<int> bits2 = from_bpsk(data_only);
+
+        for (int i = 0; i < (int)bits2.size(); i++){
+             cout << bits2[i];
+         }
+        
         printf("\n ОБРАБОТКА ЗАВЕРШЕНА \n");
         
-        run_gui(bits, IQ_bpsk, IQ_upsampled, IQ_convolved, IQ_convolved2, IQ_downsampled, bits2, erof, samples_per_symbol);
+        run_gui(bits, IQ_bpsk, IQ_upsampled, IQ_convolved, rx_subset, IQ_matched, IQ_symbol_sync, IQ_freq, znach_corr, data_only, bits2, samples_per_symbol);
 
     } else {
         printf(" ПРЕДУПРЕЖДЕНИЕ: Данные приёма пусты\n");
@@ -152,5 +219,4 @@ int main(){
     cout << "\n РАБОТА ЗАВЕРШЕНА \n" << endl;
 
     return 0;
-  
 }
