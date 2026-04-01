@@ -19,8 +19,8 @@ using namespace std;
 void run_gui(
     const vector <int>& bits, 
     const vector<complex<float>>& IQ_bpsk,
-    const vector<complex<float>>& IQ_upsampled, 
-    const vector<complex<float>>& IQ_convolved, 
+    const vector<complex<float>>& IQ_ofdm, 
+    const vector<complex<float>>& IQ_ofdm_demodulate,
     const vector<complex<float>>& rx_subset,
     const vector<complex<float>>& IQ_convolved2,
     const vector<complex<float>>& IQ_true,

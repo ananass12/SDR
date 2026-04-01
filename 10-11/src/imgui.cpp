@@ -3,8 +3,8 @@
 void run_gui(
     const vector <int>& bits, 
     const vector<complex<float>>& IQ_bpsk,
-    const vector<complex<float>>& IQ_upsampled, 
-    const vector<complex<float>>& IQ_convolved, 
+    const vector<complex<float>>& IQ_ofdm, 
+    const vector<complex<float>>& IQ_ofdm_demodulate,
     const vector<complex<float>>& rx_subset,
     const vector<complex<float>>& IQ_matched,
     const vector<complex<float>>& IQ_symbol_sync,
@@ -78,13 +78,13 @@ void run_gui(
                     ImGui::EndTabItem();
                 }
                 
-                if (ImGui::BeginTabItem("Upsampling")) {
-                    int N = IQ_upsampled.size();
+                if (ImGui::BeginTabItem("OFDM")) {
+                    int N = IQ_ofdm.size();
                     vector<float> t(N), re(N), im(N);
                     for (int i = 0; i < N; ++i) {
                         t[i] = static_cast<float>(i);
-                        re[i] = IQ_upsampled[i].real();
-                        im[i] = IQ_upsampled[i].imag();
+                        re[i] = IQ_ofdm[i].real();
+                        im[i] = IQ_ofdm[i].imag();
                     }
                     if (ImPlot::BeginPlot("##UpsamplePlot", ImVec2(-1,-1))) {
                         ImPlot::SetupAxes("Sample index", "Amplitude");
@@ -94,25 +94,26 @@ void run_gui(
                     }
                     ImGui::EndTabItem();
                 }
-                
-                if (ImGui::BeginTabItem("Convolve")) {
-                    int N = IQ_convolved.size();
+
+                if (ImGui::BeginTabItem("OFDM DEMOD")) {
+                    int N = IQ_ofdm_demodulate.size();
                     vector<float> t(N), re(N), im(N);
                     for (int i = 0; i < N; ++i) {
                         t[i] = static_cast<float>(i);
-                        re[i] = IQ_convolved[i].real();
-                        im[i] = IQ_convolved[i].imag();
+                        re[i] = IQ_ofdm_demodulate[i].real();
+                        im[i] = IQ_ofdm_demodulate[i].imag();
                     }
-                    if (ImPlot::BeginPlot("##ConvPlot", ImVec2(-1,-1))) {
+                    if (ImPlot::BeginPlot("##UpsamplePlot", ImVec2(-1,-1))) {
                         ImPlot::SetupAxes("Sample index", "Amplitude");
-                        ImPlot::PlotLine("Real", t.data(), re.data(), N);
-                        ImPlot::PlotLine("Imag", t.data(), im.data(), N);
+                        ImPlot::PlotScatter("Real", t.data(), re.data(), N);
+                        ImPlot::PlotScatter("Imag", t.data(), im.data(), N);
                         ImPlot::EndPlot();
                     }
                     ImGui::EndTabItem();
                 }
-                
+
                 ImGui::EndTabBar();
+                
             }
         }
         ImGui::End();

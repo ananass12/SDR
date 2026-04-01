@@ -9,14 +9,24 @@
 #include <cmath>
 #include <algorithm>    
 #include <iterator> 
+#include <random>
+#include <iostream>
 
 using namespace std;
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 const float PI = 3.14159265358979323846;
 const float EPS = 1e-6f;
 
 vector<complex<float>> to_bpsk(vector<int> bits);
 vector<complex<float>> barker_code(vector<complex<float>> IQ_bpsk);
+
+vector<complex<float>> OFDM_Modulate(const vector<complex<float>>& symbols, int Nc = 46);     
+vector<complex<float>> OFDM_Demodulate(const vector<complex<float>>& rx_signal, int Nc = 46);
+
 vector<complex<float>> upsampling(vector<complex<float>> IQ_bpsk, int sample_per_symbol);
 vector<complex<float>> convolve(vector<complex<float>> IQ_upsampled, int sample_per_symbol);
 vector<complex<float>> matched_filter(vector<complex<float>> input, int L, float beta = 0.75);

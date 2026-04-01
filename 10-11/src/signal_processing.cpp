@@ -1,7 +1,6 @@
 #include "signal_processing.h"
 #include <iostream>
          
-
 vector<complex<float>> to_bpsk(vector<int>bits){
     vector<complex<float>>  IQ_bpsk (bits.size());
 
@@ -26,6 +25,80 @@ vector<complex<float>> barker_code(vector<complex<float>> IQ_bpsk){
     IQ_barker.insert(IQ_barker.end(), IQ_bpsk.begin(), IQ_bpsk.end());
     
     return IQ_barker;
+}
+
+vector<complex<float>> OFDM_Modulate(const vector<complex<float>>& symbols, int Nc)                   
+{
+    // Защитный интервал = 1/8 от полезной длины символа
+    int guard_length = Nc / 8;                
+    int useful_len = Nc;
+    int total_len = useful_len + guard_length;
+   
+    vector<complex<float>> out;
+    int num_blocks = symbols.size() / Nc;
+   
+    for (int b = 0; b < num_blocks; b++) {
+        // 1. Заполнение частотной области
+        vector<complex<float>> freq(Nc);
+        for (int k = 0; k < Nc; k++)
+            freq[k] = symbols[b * Nc + k];
+       
+        // 2. IFFT: частота - время
+        vector<complex<float>> time(Nc);
+        for (int n = 0; n < Nc; n++) {
+            time[n] = {0, 0};
+            for (int k = 0; k < Nc; k++) {
+                float angle = 2.0f * PI * k * n / Nc;
+                time[n] += freq[k] * complex<float>(cosf(angle), sinf(angle));
+            }
+            time[n] /= Nc;  // Нормировка мощности
+        }
+       
+        // 3. Добавление циклического префикса 
+        for (int i = 0; i < guard_length; i++) {
+            out.push_back(time[Nc - guard_length + i]);
+        }
+        // Полезная часть
+        for (int i = 0; i < Nc; i++) {
+            out.push_back(time[i]);
+        }
+    }
+    return out;
+}
+
+vector<complex<float>> OFDM_Demodulate(const vector<complex<float>>& rx_signal, int Nc)
+{
+    // Защитный интервал = 1/8 от полезной длины символа
+    int guard_length = Nc / 8;
+    int useful_len = Nc;
+    int total_len = useful_len + guard_length;
+   
+    vector<complex<float>> out;
+    int num_blocks = rx_signal.size() / total_len;
+   
+    for (int b = 0; b < num_blocks; b++) {
+        // 1. Пропускаем защитный интервал
+        int start = b * total_len + guard_length;
+        vector<complex<float>> time(Nc);
+        for (int i = 0; i < Nc; i++)
+            time[i] = rx_signal[start + i];
+       
+        // 2. FFT: время - частота
+        vector<complex<float>> freq(Nc);
+        for (int k = 0; k < Nc; k++) {
+            freq[k] = {0, 0};
+            for (int n = 0; n < Nc; n++) {
+                float angle = -2.0f * PI * k * n / Nc;
+                freq[k] += time[n] * complex<float>(cosf(angle), sinf(angle));
+            }
+            // Нормировка не нужна: деление на N в TX компенсируется FFT
+        }
+       
+        // 3. Сохраняем восстановленные символы
+        for (int k = 0; k < Nc; k++)
+            out.push_back(freq[k]);
+    }
+    return out;
 }
 
 vector<complex<float>> upsampling(vector<complex<float>>IQ_bpsk, int sample_per_symbol){
@@ -62,39 +135,6 @@ vector<complex<float>> convolve(vector<complex<float>>IQ_upsampled, int sample_p
     }
     return IQ_convolved;
 }
-
-// vector<float> srrc(int syms, float beta, int P, float t_off) {
-//     // s = (4*beta/sqrt(P)) scales SRRC
-//     // syms  = Half of Total Number of Symbols
-//     int length_SRRC = P * syms * 2;
-//     float start = (-length_SRRC / 2.0) + 1e-8 + t_off;
-//     float stop = (length_SRRC / 2.0) + 1e-8 + t_off;
-//     float step = 1.0;
-
-//     vector<float> k;
-//     for (float val = start; val <= stop + 1; val += step) {
-//         k.push_back(val);
-//     }
-
-//     if (beta == 0) {
-//         beta = 1e-8;
-//     }
-
-//     vector<float> s;
-//     s.reserve(k.size());
-
-//     const float pi = M_PI;
-
-//     for (auto val : k) {
-//         float denom = pi * (1 - 16 * pow(beta * val / P, 2));
-//         float numerator = cos((1 + beta) * pi * val / P) + 
-//                            (sin((1 - beta) * pi * val / P) / (4 * beta * val / P));
-//         s.push_back((4 * beta / sqrt(P)) * numerator / denom);
-//     }
-
-//     return s;
-// }
-
 
 vector<float> srrc(int syms, float beta, int L, float fs) {
     // syms: полу-длина фильтра в символах
@@ -333,83 +373,6 @@ void from_buff(vector<complex<float>>& IQ_rx, const int16_t* sdr_buff, size_t sa
     }
 }
 
-vector<float> arange(float start, float stop, float step) {
-    vector<float> result;
-    for (float val = start; val < stop; val += step) {
-        result.push_back(val);
-    }
-    return result;
-}
-
-// Грубая оценка частотного оффсета 
-float coarse_max_freq_calculation(const vector<complex<float>>& samples, 
-                                  int sample_rate) {
-    int buffer_size = samples.size();
-    
-    vector<complex<float>> matched_squared(buffer_size);
-    vector<complex<float>> fft_out(buffer_size);
-    vector<float> fft_abs(buffer_size);
-    
-    // Возведение в квадрат (убираем BPSK модуляцию)
-    for (int i = 0; i < buffer_size; i++) {
-        matched_squared[i] = samples[i] * samples[i];  // z²
-    }
-    
-    // БПФ
-    fftwf_plan p = fftwf_plan_dft_1d(buffer_size,
-                                   reinterpret_cast<fftwf_complex*>(matched_squared.data()),
-                                   reinterpret_cast<fftwf_complex*>(fft_out.data()),
-                                   FFTW_FORWARD, 
-                                   FFTW_ESTIMATE);
-    fftwf_execute(p);
-    fftwf_destroy_plan(p);  
-    
-    // Амплитудный спектр
-    for (int i = 0; i < buffer_size; i++) {
-        fft_abs[i] = abs(fft_out[i]);
-    }
-    
-    // fftshift (центр спектра)
-    vector<float> fft_abs_shifted(buffer_size);
-    int half = buffer_size / 2;
-    for (int i = 0; i < buffer_size; i++) {
-        int src_idx = (i + half) % buffer_size;
-        fft_abs_shifted[i] = fft_abs[src_idx];
-    }
-    
-    // Частотная ось
-    vector<float> freqs(buffer_size);
-    float df = (float)sample_rate / buffer_size;
-    for (int i = 0; i < buffer_size; i++) {
-        freqs[i] = (-(float)sample_rate / 2.0f) + i * df;
-    }
-    
-    // Поиск пика
-    auto max_it = max_element(fft_abs_shifted.begin(), fft_abs_shifted.end());
-    int index = distance(fft_abs_shifted.begin(), max_it);
-    
-    // Делим на 2 (потому что возводили в квадрат)
-    return freqs[index] / 2.0f;
-}
-
-// Компенсация частотного оффсета
-vector<complex<float>> coarse_freq_sync(const vector<complex<float>>& samples, float coarse_freq, int sample_rate) {
-    int buffer_size = samples.size();
-    vector<complex<float>> out(buffer_size);
-    
-    float Ts = 1.0f / (float)sample_rate;
-    const float PI = 3.14159265358979f;
-    
-    for (int i = 0; i < buffer_size; i++) {
-        float t = i * Ts;
-        // Поворот в противоположном направлении
-        complex<float> rot(0.0f, -2.0f * PI * coarse_freq * t);
-        out[i] = samples[i] * exp(rot);
-    }
-    
-    return out;
-}
-
 vector<complex<float>> freq_sync_bpsk(const vector<complex<float>>& samples){
     int N = static_cast<int>(samples.size());
     float phase = 0.0f;
@@ -471,13 +434,6 @@ int find_barker(const vector<complex<float>>& signal, const vector<complex<float
             break;
         }
     }
-    
-    // if (barker_idx >= 0) {
-    //     if (max_val < threshold_ratio) {
-    //         printf("Пик корреляции слишком слабый: %.3f (порог: %.3f)\n", max_val, threshold_ratio);
-    //         return -1;
-    //     }
-    // }
     
     return barker_idx;  
 }
