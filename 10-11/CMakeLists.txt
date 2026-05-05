@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.16)
 project(PlutoSDR CXX) 
 
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
+    message(FATAL_ERROR "cmake -S . -B build && cmake --build build")
+endif()
+
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_BUILD_TYPE Debug)

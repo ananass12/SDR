@@ -5,25 +5,41 @@
 #include <cmath>
 #include <complex>
 #include <fftw3.h> 
+#include <vector>
+#include <iostream>
+#include <thread>
+#include <chrono>
+#include <atomic>
 
 using namespace std;
+atomic<bool> running(true);
+using std::vector;
+using std::complex;
 
 int main(){
 
    srand((unsigned int)time(NULL));
+
+   // ИНИЦИАЛИЗАЦИЯ SDR
   
-   sdr_device_t *sdr = sdr_init(1);
-   if (sdr == NULL) {
+   sdr_device_t *sdr_tx = sdr_init(1);
+   sdr_device_t *sdr_rx = sdr_init(2);
+
+   if (sdr_tx == NULL || sdr_rx == NULL) {
        printf("ОШИБКА: Не удалось инициализировать SDR устройство\n");
        return 1;
    }
-   if (sdr_configure(sdr) != 0) { sdr_cleanup(sdr); return 1; }
+
+   if (sdr_configure(sdr_tx) != 0) return 1;
+   if (sdr_configure(sdr_rx) != 0) return 1;
 
    printf(" УСТРОЙСТВО ИНИЦИАЛИЗИРОВАНО \n");
-   printf("TX MTU - %zu сэмплов\n", sdr->tx_mtu);
+   printf("TX MTU - %zu сэмплов\n", sdr_tx->tx_mtu);
+
+   // ДАННЫЕ
 
    int sample_per_symbol = 16;
-   const int num_bits = sdr->tx_mtu / sample_per_symbol - 7; 
+   const int num_bits = sdr_tx->tx_mtu / sample_per_symbol - 7; 
 
    vector<int> bits;
    bits.resize(num_bits);
@@ -40,6 +56,8 @@ int main(){
 
    printf("Сгенерировано %zu бит\n", hello_sibguti.size());
 
+    // ОБРАБОТКА ДАННЫХ
+
    printf(" BPSK модуляция\n");
    vector<complex<float>> IQ_bpsk = to_bpsk(hello_sibguti);
    printf("Получено %zu символов\n", IQ_bpsk.size());
@@ -48,19 +66,19 @@ int main(){
    vector<complex<float>> IQ_barker = barker_code(IQ_bpsk);
    printf("Получено %zu символов\n", IQ_barker.size());
 
-    printf(" OFDM\n");
-    vector<complex<float>> IQ_ofdm = OFDM_Modulate(IQ_bpsk);
+   printf(" OFDM\n");
+   vector<complex<float>> IQ_ofdm = OFDM_Modulate(IQ_bpsk);
 
-    printf(" OFDM DEMO\n");
-    vector<complex<float>> IQ_ofdm_demodulate = OFDM_Demodulate(IQ_ofdm);
+   printf(" OFDM DEMO\n");
+   vector<complex<float>> IQ_ofdm_demodulate = OFDM_Demodulate(IQ_ofdm);
 
-    vector<int> biiits;
-    biiits = from_bpsk(IQ_ofdm_demodulate);
+   vector<int> biiits;
+   biiits = from_bpsk(IQ_ofdm_demodulate);
 
-    for (int i = 0; i < (int)biiits.size(); i++) {
-        cout << biiits[i];
-    }
-    cout << endl;
+   for (int i = 0; i < (int)biiits.size(); i++) {
+       cout << biiits[i];
+   }
+   cout << endl;
 
 
    //printf(" Upsampling\n");
@@ -74,9 +92,33 @@ int main(){
 
    printf(" ОБРАБОТКА ЗАКОНЧЕНА \n");
 
+   // БУФФЕРЫ
+
    printf(" Конвертация в буфер\n");
 
-   int16_t *tx_buff = (int16_t*)malloc(2 * sdr->tx_mtu * sizeof(int16_t));
+    int16_t *tx_buff = (int16_t*)malloc(2 * sdr_tx->tx_mtu * sizeof(int16_t));
+    int16_t *rx_buff = (int16_t*)malloc(2 * sdr_rx->rx_mtu * sizeof(int16_t));
+
+    vector<complex<float>> rx_complex;
+    rx_complex.reserve(200000);
+
+    long long base_time = 0;
+    long long timeNs = 0;
+    const long timeoutUs = 400000;
+
+    FILE *rx_file = fopen("rx_samples.pcm", "wb");
+    FILE *tx_file = fopen("tx_samples.pcm", "wb");
+
+    if (!tx_file) {
+        perror("Не удалось открыть tx_samples.pcm");
+    }
+    
+    if (!rx_file) {
+        perror("Не удалось открыть rx_samples.pcm");
+    }
+  
+
+
   
    to_buff(IQ_ofdm, tx_buff, IQ_ofdm.size());
 
@@ -94,79 +136,105 @@ int main(){
    //     tx_buff[2*i + 1] = 0;
    // }
   
-   int16_t *rx_buff = (int16_t*)malloc(2 * sdr->rx_mtu * sizeof(int16_t));
-   long long timeNs = 0;
-   const long timeoutUs = 400000;
-
-   FILE *rx_file = fopen("rx_samples.pcm", "wb");
-   if (!rx_file) {
-       perror("Не удалось открыть rx_samples.pcm");
-   }
-   vector<complex<float>> rx_complex(1920);
-  
-   FILE *tx_file = fopen("tx_samples.pcm", "wb");
-   if (!tx_file) {
-       perror("Не удалось открыть tx_samples.pcm");
-   }
-  
+   
    vector<complex<float>> rx_signal;
 
    size_t iteration_count = 100;
-   printf("НАЧАЛО ПРИЕМА/ПЕРЕДАЧИ\n");
+   
 
-   for (size_t i = 0; i < iteration_count; i+=2)  {
-      
-       // ПРИЁМ
-       void *rx_buffs[] = {rx_buff};
-       int flags;
-       // считали буффер RX, записали его в rx_buffer
-       int sr = SoapySDRDevice_readStream(sdr->device, sdr->rxStream, rx_buffs, sdr->rx_mtu, &flags, &timeNs, timeoutUs);
-      
-       if (sr > 0) {
-           printf("Приём %zu: %d сэмплов\n", i, sr);
-          
-           if (rx_file != NULL && sr > 0) {
+   // ПОТОК RX
 
-               fwrite(rx_buff, sizeof(int16_t), 2 * sr, rx_file);
-           }
-           rx_complex.insert(rx_complex.end(),rx_buff, rx_buff + 2*sr);
-       }
-  
-       // передача на 3 итерации
-       if (sr > 0) {
-           //printf("\n  ОТПРАВКА СИГНАЛА (%zu сэмплов)\n", IQ_ofdm.size());
-          
-           if (tx_file != NULL) {
-               size_t written = fwrite(tx_buff, sizeof(int16_t), 2 * IQ_ofdm.size(), tx_file);
-               if (written != 2 * IQ_ofdm.size()) {
-                   perror("Ошибка записи tx_samples.pcm");
-               }
-           }
-           long long tx_time = timeNs + (10 * 1000 * 1000);  //10 мс
+   thread rx_thread([&]() {
+        while (running) {
+            void *rx_buffs[] = {rx_buff};
+            int flags;
+            long long timeNs;
 
-           for(size_t j = 0; j < 8; j++) {
-               uint8_t tx_time_byte = (tx_time >> (j * 8)) & 0xff;
-               tx_buff[2 + j] = tx_time_byte << 4;
-           }
-          
-           void *tx_buffs[] = {tx_buff};
-           int tx_flags = SOAPY_SDR_HAS_TIME;
-           int st = SoapySDRDevice_writeStream(sdr->device, sdr->txStream, (const void * const*)tx_buffs, sdr->tx_mtu, &tx_flags, tx_time, timeoutUs);
-          
-           if (st != (int)sdr->tx_mtu) {
-               //printf("    ОШИБКА передачи: %d\n", st);
-           } else {
-               //printf(" Успешно отправлено\n");
-           }
-       }
-  
-   }
+            int sr = SoapySDRDevice_readStream(
+                sdr_rx->device,
+                sdr_rx->rxStream,
+                rx_buffs,
+                sdr_rx->rx_mtu,
+                &flags,
+                &timeNs,
+                timeoutUs
+            );
 
-   if (rx_file != NULL) fclose(rx_file);
-   if (tx_file != NULL) fclose(tx_file);
-   printf("\n Файлы сохранены \n");
+            if (sr > 0) {
+                if (base_time == 0)
+                    base_time = timeNs;
+                if (rx_file)
+                    fwrite(rx_buff, sizeof(int16_t), 2 * sr, rx_file);
+                for (int i = 0; i < sr; i++) {
+                    float I_ = rx_buff[2*i] / 2048.0f;
+                    float Q = rx_buff[2*i + 1] / 2048.0f;
+                    rx_complex.emplace_back(I_, Q);
+                }
+            }
+        }
+    });
 
-   printf("\n  ОБРАБОТКА ПРИНЯТЫХ ДАННЫХ \n");
+    // ПОТОК TX
+
+    thread tx_thread([&]() {
+
+        while (running) {
+
+            size_t tx_len = min(IQ_ofdm.size(), (size_t)sdr_tx->tx_mtu);
+            to_buff(IQ_ofdm, tx_buff, tx_len);
+
+            long long tx_time = base_time + 10e6;
+
+            if (tx_file)
+                fwrite(tx_buff, sizeof(int16_t), 2 * tx_len, tx_file);
+
+            void *tx_buffs[] = {tx_buff};
+
+            int flags = SOAPY_SDR_HAS_TIME;
+
+            int st = SoapySDRDevice_writeStream(
+                sdr_tx->device,
+                sdr_tx->txStream,
+                (const void * const*)tx_buffs,
+                tx_len,            
+                &flags,              
+                tx_time,
+                timeoutUs
+            );
+
+            this_thread::sleep_for(chrono::milliseconds(10));
+        }
+    });
+
+    // ОСНОВНОЙ ПОТОК
+
+    printf("НАЧАЛО ПРИЕМА/ПЕРЕДАЧИ\n");
+
+    for (size_t i = 0; i < 100; i++) {
+        this_thread::sleep_for(chrono::milliseconds(50));
+    }
+
+    // ОСТАНОВКА
+
+    running = false;
+
+    rx_thread.join();
+    tx_thread.join();
+
+    if (rx_file) fclose(rx_file);
+    if (tx_file) fclose(tx_file);
+
+    free(tx_buff);
+    free(rx_buff);
+
+    sdr_cleanup(sdr_tx);
+    sdr_cleanup(sdr_rx);
+
+    printf("ЗАВЕРШЕНО\n");
+
+    // ОБРАБОТКА ПРИНЯТЫХ ДАННЫХ
+
+    printf("\n  ОБРАБОТКА ПРИНЯТЫХ ДАННЫХ \n");
 
    if (test_rx_samples_bpsk_barker13.size() > 0) {
         printf("Всего сэмплов: %zu\n", test_rx_samples_bpsk_barker13.size());
@@ -266,7 +334,8 @@ int main(){
   
    free(tx_buff);
    free(rx_buff);
-   sdr_cleanup(sdr);
+   sdr_cleanup(sdr_tx);
+   sdr_cleanup(sdr_rx);
    cout << "\n РАБОТА ЗАВЕРШЕНА \n" << endl;
 
    return 0;

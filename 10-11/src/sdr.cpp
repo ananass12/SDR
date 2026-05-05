@@ -1,5 +1,6 @@
 #include "sdr.h"
 #include <iostream>
+#include <cstdlib>
 const long timeoutUs = 400000;
 
 sdr_device_t* sdr_init(int use_usb) {
@@ -9,9 +10,12 @@ sdr_device_t* sdr_init(int use_usb) {
 
     // Выбор способа подключения к устройству
     if (use_usb) {
-        SoapySDRKwargs_set(&args, "uri", "usb:");           // Подключение по USB
+        const char* uri = std::getenv("PLUTO_URI");
+        if (uri != nullptr && uri[0] != '\0') {
+            SoapySDRKwargs_set(&args, "uri", uri);
+        }
     } else {
-     SoapySDRKwargs_set(&args, "uri", "ip:192.168.2.1"); // Подключение по IP
+        SoapySDRKwargs_set(&args, "uri", "ip:192.168.2.1"); // Подключение по IP
     }
 
     // Дополнительные параметры
